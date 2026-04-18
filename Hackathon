@@ -1,0 +1,180 @@
+/************ BLYNK DETAILS ************/
+#define BLYNK_TEMPLATE_ID "TMPL3DIJspyZn"
+#define BLYNK_TEMPLATE_NAME "FLOOD DETECTION SYSTEM"
+#define BLYNK_AUTH_TOKEN "PhuwP0JK6m-E2-vYHdc4tRn1OtDOBgRX"
+
+/************ LIBRARIES ************/
+#include <WiFi.h>
+#include <WebServer.h>
+#include <BlynkSimpleEsp32.h>
+#include <Wire.h>
+#include <U8g2lib.h>
+
+/************ WIFI ************/
+char ssid[] = "PRARAMBH";
+char pass[] = "projectsolved";
+
+/************ WEB SERVER ************/
+WebServer server(80);
+
+/************ OLED (SH1106 - 1.3 inch) ************/
+U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
+
+/************ WATER SENSOR PINS ************/
+#define LOW_PIN   34
+#define MID_PIN   35
+#define HIGH_PIN  32
+
+/************ LED PINS ************/
+#define LED_GREEN   18
+#define LED_YELLOW  19
+#define LED_ORANGE  21
+#define LED_RED     22
+
+/************ VARIABLES ************/
+int lowVal, midVal, highVal;
+String statusText = "NO WATER";
+
+/************ FUNCTIONS ************/
+int readLevel(int pin) {
+  return digitalRead(pin);
+}
+
+void handleRoot() {
+  String page = "<html><body>";
+  page += "<h1>Flood Detection System</h1>";
+  page += "<h2>Status: " + statusText + "</h2>";
+  page += "<p>Low Sensor: " + String(lowVal) + "</p>";
+  page += "<p>Mid Sensor: " + String(midVal) + "</p>";
+  page += "<p>High Sensor: " + String(highVal) + "</p>";
+  page += "</body></html>";
+
+  server.send(200, "text/html", page);
+}
+
+/************ SETUP ************/
+void setup() {
+
+  Serial.begin(115200);
+  delay(2000);
+
+  Serial.println("ESP32 STARTED");
+
+  pinMode(LOW_PIN, INPUT);
+  pinMode(MID_PIN, INPUT);
+  pinMode(HIGH_PIN, INPUT);
+
+  pinMode(LED_GREEN, OUTPUT);
+  pinMode(LED_YELLOW, OUTPUT);
+  pinMode(LED_ORANGE, OUTPUT);
+  pinMode(LED_RED, OUTPUT);
+
+  /************ OLED START ************/
+  Wire.begin(27, 13);   // SDA, SCL
+  u8g2.begin();
+
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_ncenB08_tr);
+  u8g2.drawStr(10,25,"SYSTEM");
+  u8g2.drawStr(10,45,"STARTED");
+  u8g2.sendBuffer();
+
+  delay(2000);
+
+  /************ WIFI ************/
+  Serial.println("Connecting WiFi...");
+  WiFi.begin(ssid, pass);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("\nWiFi CONNECTED");
+  Serial.println(WiFi.localIP());
+
+  /************ BLYNK ************/
+  Serial.println("Connecting to Blynk...");
+  Blynk.begin(BLYNK_AUTH_TOKEN, ssid, pass);
+
+  Serial.println("Blynk CONNECTED");
+
+  /************ WEB SERVER ************/
+  server.on("/", handleRoot);
+  server.begin();
+
+  Serial.println("Web Server Started");
+}
+
+/************ LOOP ************/
+void loop() {
+
+  Blynk.run();
+  server.handleClient();
+
+  lowVal  = readLevel(LOW_PIN);
+  midVal  = readLevel(MID_PIN);
+  highVal = readLevel(HIGH_PIN);
+
+  /************ RESET BLYNK + LEDS ************/
+  Blynk.virtualWrite(V0, 0);
+  Blynk.virtualWrite(V1, 0);
+  Blynk.virtualWrite(V2, 0);
+  Blynk.virtualWrite(V3, 0);
+
+  digitalWrite(LED_GREEN, LOW);
+  digitalWrite(LED_YELLOW, LOW);
+  digitalWrite(LED_ORANGE, LOW);
+  digitalWrite(LED_RED, LOW);
+
+  /************ WATER LEVEL LOGIC ************/
+
+  if (lowVal == 0 && midVal == 0 && highVal == 0) {
+
+    statusText = "NO WATER";
+    Blynk.virtualWrite(V0, 1);
+    digitalWrite(LED_GREEN, HIGH);
+
+  }
+  else if (lowVal == 1 && midVal == 0 && highVal == 0) {
+
+    statusText = "LOW WATER";
+    Blynk.virtualWrite(V1, 1);
+    digitalWrite(LED_YELLOW, HIGH);
+
+  }
+  else if (lowVal == 1 && midVal == 1 && highVal == 0) {
+
+    statusText = "HIGH WATER";
+    Blynk.virtualWrite(V2, 1);
+    digitalWrite(LED_ORANGE, HIGH);
+
+  }
+  else if (lowVal == 1 && midVal == 1 && highVal == 1) {
+
+    statusText = "FLOOD DETECTED";
+    Blynk.virtualWrite(V3, 1);
+    digitalWrite(LED_RED, HIGH);
+
+  }
+
+  /************ OLED DISPLAY ************/
+  u8g2.clearBuffer();
+
+  u8g2.setFont(u8g2_font_ncenB08_tr);
+  u8g2.drawStr(0,20,"STATUS:");
+
+  u8g2.setFont(u8g2_font_ncenB14_tr);
+  u8g2.drawStr(0,50, statusText.c_str());
+
+  u8g2.sendBuffer();
+
+  /************ SERIAL MONITOR ************/
+  Serial.print("LOW: "); Serial.print(lowVal);
+  Serial.print(" MID: "); Serial.print(midVal);
+  Serial.print(" HIGH: "); Serial.print(highVal);
+  Serial.print(" => ");
+  Serial.println(statusText);
+
+  delay(1000);
+}
